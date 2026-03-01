@@ -5,7 +5,7 @@
             var store = shelter.plugin.store;
 
             function getToken() {
-                var raw = localStorage.getItem("token");
+                var raw = window.localStorage.getItem("token");
                 return raw ? raw.replace(/^"|"$/g, "") : null;
             }
 
@@ -32,8 +32,8 @@
             }
 
             function switchTo(account) {
-                localStorage.setItem("token", JSON.stringify(account.token));
-                location.reload();
+                window.localStorage.setItem("token", JSON.stringify(account.token));
+                window.location.reload();
             }
 
             var self = this;

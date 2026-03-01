@@ -4,8 +4,10 @@
             var LOG = "[Multibox]";
             var store = shelter.plugin.store;
 
+            var _win = document.defaultView || globalThis;
+
             function getToken() {
-                var raw = window.localStorage.getItem("token");
+                var raw = _win.localStorage.getItem("token");
                 return raw ? raw.replace(/^"|"$/g, "") : null;
             }
 
@@ -32,8 +34,8 @@
             }
 
             function switchTo(account) {
-                window.localStorage.setItem("token", JSON.stringify(account.token));
-                window.location.reload();
+                _win.localStorage.setItem("token", JSON.stringify(account.token));
+                _win.location.reload();
             }
 
             var self = this;

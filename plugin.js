@@ -4,11 +4,58 @@
             var LOG = "[Multibox]";
             var store = shelter.plugin.store;
 
-            var _win = document.defaultView || globalThis;
-
+            // Get token via Discord's webpack internals — localStorage is sandboxed by shelter
             function getToken() {
-                var raw = _win.localStorage.getItem("token");
-                return raw ? raw.replace(/^"|"$/g, "") : null;
+                try {
+                    // Method 1: webpackChunkdiscord_app
+                    var wp = window.webpackChunkdiscord_app || self.webpackChunkdiscord_app;
+                    if (!wp) {
+                        // try through document
+                        var w = document.defaultView;
+                        if (w) wp = w.webpackChunkdiscord_app;
+                    }
+                    if (wp) {
+                        var token = null;
+                        wp.push([[Symbol()], {}, function(e) {
+                            var c = Object.values(e.c || {});
+                            for (var i = 0; i < c.length; i++) {
+                                var m = c[i];
+                                if (m && m.exports && m.exports.default && typeof m.exports.default.getToken === "function") {
+                                    token = m.exports.default.getToken();
+                                    break;
+                                }
+                                if (m && m.exports && typeof m.exports.getToken === "function") {
+                                    token = m.exports.getToken();
+                                    break;
+                                }
+                            }
+                        }]);
+                        wp.pop();
+                        if (token) return token;
+                    }
+                } catch(e) {
+                    console.warn(LOG, "webpack token extraction failed:", e);
+                }
+
+                // Method 2: Try through shelter's flux stores
+                try {
+                    var AuthStore = shelter.flux.storesFlat.AuthenticationStore;
+                    if (AuthStore && AuthStore.getToken) return AuthStore.getToken();
+                } catch(e) {}
+
+                // Method 3: iframe trick to get real window.localStorage
+                try {
+                    var iframe = document.createElement("iframe");
+                    iframe.style.display = "none";
+                    document.body.appendChild(iframe);
+                    var raw = iframe.contentWindow.localStorage.getItem("token");
+                    document.body.removeChild(iframe);
+                    if (raw) return raw.replace(/^"|"$/g, "");
+                } catch(e) {
+                    console.warn(LOG, "iframe localStorage failed:", e);
+                }
+
+                return null;
             }
 
             function getCurrentUser() {
@@ -33,31 +80,52 @@
                 console.log(LOG, "Saved account:", user.username, "| Total:", accs.length);
             }
 
-            function switchTo(account) {
-                _win.localStorage.setItem("token", JSON.stringify(account.token));
-                _win.location.reload();
+            function setTokenAndReload(token) {
+                // Use iframe to access real localStorage for writing too
+                try {
+                    var iframe = document.createElement("iframe");
+                    iframe.style.display = "none";
+                    document.body.appendChild(iframe);
+                    iframe.contentWindow.localStorage.setItem("token", JSON.stringify(token));
+                    document.body.removeChild(iframe);
+                } catch(e) {
+                    console.warn(LOG, "iframe setToken failed, trying eval:", e);
+                    // Fallback: eval in global scope
+                    try {
+                        (0, eval)('localStorage.setItem("token", ' + JSON.stringify(JSON.stringify(token)) + ')');
+                    } catch(e2) {
+                        console.error(LOG, "All setToken methods failed:", e2);
+                        return;
+                    }
+                }
+                // Reload
+                try { document.defaultView.location.reload(); } catch(e) {
+                    try { (0, eval)("location.reload()"); } catch(e2) {
+                        console.error(LOG, "Cannot reload:", e2);
+                    }
+                }
             }
 
-            var self = this;
+            var self2 = this;
 
-            // === Inject CSS ===
+            // === Inject CSS via style element ===
             var css = "#multibox-switcher{position:fixed;bottom:56px;left:78px;z-index:2147483646}"
-                + "#multibox-btn{width:36px;height:36px;border-radius:50%;border:2px solid var(--brand-500);background:var(--background-secondary);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;transition:transform .15s,box-shadow .15s}"
-                + "#multibox-btn:hover{transform:scale(1.1);box-shadow:0 2px 8px rgba(0,0,0,.3)}"
-                + "#multibox-btn img{width:28px;height:28px;border-radius:50%;pointer-events:none}"
-                + "#multibox-popup{display:none;position:absolute;bottom:44px;left:0;background:var(--background-floating);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.3);padding:8px;min-width:200px;max-width:280px}"
-                + "#multibox-popup.open{display:block}"
-                + ".mbx-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;transition:background .1s}"
-                + ".mbx-row:hover{background:var(--background-modifier-hover)}"
-                + ".mbx-row.active{background:var(--background-modifier-selected);cursor:default}"
-                + ".mbx-row img{width:28px;height:28px;border-radius:50%;flex-shrink:0;pointer-events:none}"
-                + ".mbx-name{flex:1;color:var(--text-normal);font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
-                + ".mbx-badge{font-size:10px;color:var(--text-positive);font-weight:600;flex-shrink:0}"
-                + ".mbx-rm{color:var(--text-muted);cursor:pointer;font-size:16px;padding:0 2px;opacity:.5;flex-shrink:0;background:none;border:none}"
-                + ".mbx-rm:hover{opacity:1;color:var(--text-danger)}"
-                + ".mbx-save{width:100%;padding:6px;border-radius:4px;border:1px dashed var(--text-muted);background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;margin-top:4px}"
-                + ".mbx-save:hover{border-color:var(--brand-500);color:var(--brand-500)}"
-                + ".mbx-divider{height:1px;background:var(--background-modifier-accent);margin:4px 0}";
+                + " #multibox-btn{width:36px;height:36px;border-radius:50%;border:2px solid var(--brand-500);background:var(--background-secondary);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;transition:transform .15s,box-shadow .15s}"
+                + " #multibox-btn:hover{transform:scale(1.1);box-shadow:0 2px 8px rgba(0,0,0,.3)}"
+                + " #multibox-btn img{width:28px;height:28px;border-radius:50%;pointer-events:none}"
+                + " #multibox-popup{display:none;position:absolute;bottom:44px;left:0;background:var(--background-floating);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.3);padding:8px;min-width:200px;max-width:280px}"
+                + " #multibox-popup.open{display:block}"
+                + " .mbx-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;transition:background .1s}"
+                + " .mbx-row:hover{background:var(--background-modifier-hover)}"
+                + " .mbx-row.active{background:var(--background-modifier-selected);cursor:default}"
+                + " .mbx-row img{width:28px;height:28px;border-radius:50%;flex-shrink:0;pointer-events:none}"
+                + " .mbx-name{flex:1;color:var(--text-normal);font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+                + " .mbx-badge{font-size:10px;color:var(--text-positive);font-weight:600;flex-shrink:0}"
+                + " .mbx-rm{color:var(--text-muted);cursor:pointer;font-size:16px;padding:0 2px;opacity:.5;flex-shrink:0;background:none;border:none}"
+                + " .mbx-rm:hover{opacity:1;color:var(--text-danger)}"
+                + " .mbx-save{width:100%;padding:6px;border-radius:4px;border:1px dashed var(--text-muted);background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;margin-top:4px}"
+                + " .mbx-save:hover{border-color:var(--brand-500);color:var(--brand-500)}"
+                + " .mbx-divider{height:1px;background:var(--background-modifier-accent);margin:4px 0}";
 
             var styleEl = document.createElement("style");
             styleEl.textContent = css;
@@ -115,7 +183,7 @@
                         row.appendChild(rm);
 
                         if (!isActive) {
-                            row.addEventListener("click", function () { switchTo(account); });
+                            row.addEventListener("click", function () { setTokenAndReload(account.token); });
                         }
 
                         popup.appendChild(row);
@@ -168,20 +236,22 @@
             var user = getCurrentUser();
             if (token && user) {
                 saveAccount(token, user);
+            } else {
+                console.log(LOG, "Token:", !!token, "User:", !!user, "— will retry");
             }
 
             renderSwitcher();
             document.body.appendChild(container);
 
-            // Retry save if user wasn't ready
-            if (!user) {
+            // Retry save if user/token wasn't ready
+            if (!token || !user) {
                 this._retryInterval = setInterval(function () {
                     var t = getToken();
                     var u = getCurrentUser();
                     if (t && u) {
                         saveAccount(t, u);
                         renderSwitcher();
-                        clearInterval(self._retryInterval);
+                        clearInterval(self2._retryInterval);
                     }
                 }, 3000);
             }
@@ -201,18 +271,26 @@
     },
 
     onUnload() {
-        if (this._container && this._container.parentNode) {
-            this._container.parentNode.removeChild(this._container);
-        }
-        if (this._styleEl && this._styleEl.parentNode) {
-            this._styleEl.parentNode.removeChild(this._styleEl);
-        }
-        if (this._outsideClick) {
-            document.removeEventListener("click", this._outsideClick);
-        }
-        if (this._retryInterval) {
-            clearInterval(this._retryInterval);
-        }
+        try {
+            if (this._container && this._container.parentNode) {
+                this._container.parentNode.removeChild(this._container);
+            }
+        } catch(e) {}
+        try {
+            if (this._styleEl && this._styleEl.parentNode) {
+                this._styleEl.parentNode.removeChild(this._styleEl);
+            }
+        } catch(e) {}
+        try {
+            if (this._outsideClick) {
+                document.removeEventListener("click", this._outsideClick);
+            }
+        } catch(e) {}
+        try {
+            if (this._retryInterval) {
+                clearInterval(this._retryInterval);
+            }
+        } catch(e) {}
         console.log("[Multibox]", "Unloaded");
     },
 

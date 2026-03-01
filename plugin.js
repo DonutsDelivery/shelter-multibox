@@ -39,28 +39,6 @@
             location.reload();
         }
 
-        // Auto-save current account on load (with retry if Discord isn't ready)
-        var saved = false;
-        function trySave() {
-            if (saved) return true;
-            var t = getToken();
-            var u = getCurrentUser();
-            if (t && u) {
-                saveAccount(t, u);
-                saved = true;
-                renderSwitcher();
-                return true;
-            }
-            return false;
-        }
-
-        if (!trySave()) {
-            console.log(LOG, "User not ready, retrying...");
-            this._retryInterval = setInterval(function () {
-                if (trySave()) clearInterval(self._retryInterval);
-            }, 2000);
-        }
-
         var self = this;
 
         // === Inject CSS ===
@@ -185,6 +163,29 @@
         }
 
         this._renderSwitcher = renderSwitcher;
+
+        // Auto-save current account then render
+        var saved = false;
+        function trySave() {
+            if (saved) return true;
+            var t = getToken();
+            var u = getCurrentUser();
+            if (t && u) {
+                saveAccount(t, u);
+                saved = true;
+                renderSwitcher();
+                return true;
+            }
+            return false;
+        }
+
+        if (!trySave()) {
+            console.log(LOG, "User not ready, retrying...");
+            this._retryInterval = setInterval(function () {
+                if (trySave()) clearInterval(self._retryInterval);
+            }, 2000);
+        }
+
         renderSwitcher();
         document.body.appendChild(container);
 
